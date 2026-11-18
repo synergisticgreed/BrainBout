@@ -1,0 +1,155 @@
+import React, { useState, useEffect } from 'react';
+import io from 'socket.io-client';
+
+const socket = io('http://localhost:5000');
+
+export default function BrainBout() {
+  const [gameState, setGameState] = useState('menu'); // menu, waiting, playing, gameover
+  const [form, setForm] = useState({ standard: 'College', topic: 'Coding', age: '20' });
+  const [questionData, setQuestionData] = useState(null);
+  const [scores, setScores] = useState({});
+  const [roomId, setRoomId] = useState(null);
+  const [feedback, setFeedback] = useState('');
+
+  useEffect(() => {
+    socket.on('waiting', () => setGameState('waiting'));
+    
+    socket.on('matchFound', (data) => {
+      setRoomId(data.roomId);
+      setGameState('playing');
+      setFeedback('Match found! Get ready...');
+    });
+
+    socket.on('newQuestion', (data) => {
+      setQuestionData(data);
+      setFeedback('');
+    });
+
+    socket.on('roundResult', (data) => {
+      setScores(data.scores);
+      if (data.winner === socket.id) {
+        setFeedback('You were the fastest! Point awarded.');
+      } else {
+        setFeedback('Opponent answered first!');
+      }
+    });
+
+    socket.on('wrongAnswer', () => setFeedback('Incorrect! Opponent can still answer.'));
+    
+    socket.on('gameOver', (data) => {
+      setScores(data.scores);
+      setGameState('gameover');
+    });
+
+    return () => socket.off();
+  }, []);
+
+  const handleSearch = () => {
+    socket.emit('findMatch', form);
+  };
+
+  const handleAnswer = (idx) => {
+    socket.emit('submitAnswer', { roomId, selectedOption: idx });
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center font-sans">
+      
+      {gameState === 'menu' && (
+        <div className="bg-gray-800 p-8 rounded-xl shadow-2xl w-96 border border-gray-700">
+          <h1 className="text-3xl font-bold text-blue-400 mb-6 text-center">BrainBout ⚡️</h1>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm text-gray-400 mb-1">Standard/Class</label>
+              <select 
+                className="w-full bg-gray-700 rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={form.standard} 
+                onChange={(e) => setForm({...form, standard: e.target.value})}
+              >
+                <option>10th Grade</option>
+                <option>12th Grade</option>
+                <option>College</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm text-gray-400 mb-1">Topic</label>
+              <select 
+                className="w-full bg-gray-700 rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={form.topic} 
+                onChange={(e) => setForm({...form, topic: e.target.value})}
+              >
+                <option>Coding</option>
+                <option>AI</option>
+                <option>Maths</option>
+              </select>
+            </div>
+            <button 
+              onClick={handleSearch}
+              className="w-full bg-blue-600 hover:bg-blue-500 transition-colors py-2 rounded-lg font-semibold mt-4"
+            >
+              Find Opponent
+            </button>
+          </div>
+        </div>
+      )}
+
+      {gameState === 'waiting' && (
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-500 mx-auto mb-4"></div>
+          <h2 className="text-xl font-semibold animate-pulse">Matching you with a worthy opponent...</h2>
+        </div>
+      )}
+
+      {gameState === 'playing' && (
+        <div className="w-full max-w-2xl bg-gray-800 p-8 rounded-xl shadow-2xl border border-gray-700">
+          <div className="flex justify-between items-center mb-8 border-b border-gray-700 pb-4">
+            <div className="text-lg font-bold text-blue-400">You: {scores[socket.id] || 0}</div>
+            <div className="text-sm font-semibold text-gray-400">Question {questionData?.qNum || 0} / 10</div>
+            <div className="text-lg font-bold text-red-400">Opponent: {Object.entries(scores).find(([id]) => id !== socket.id)?.[1] || 0}</div>
+          </div>
+
+          <div className="text-center min-h-[200px]">
+            {feedback ? (
+              <h2 className="text-2xl font-bold text-yellow-400">{feedback}</h2>
+            ) : questionData ? (
+              <>
+                <h2 className="text-2xl font-semibold mb-6">{questionData.question}</h2>
+                <div className="grid grid-cols-2 gap-4">
+                  {questionData.options.map((opt, idx) => (
+                    <button 
+                      key={idx}
+                      onClick={() => handleAnswer(idx)}
+                      className="bg-gray-700 hover:bg-blue-600 transition-colors p-4 rounded-lg text-left text-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <h2 className="text-xl text-gray-400">Preparing next question...</h2>
+            )}
+          </div>
+        </div>
+      )}
+
+      {gameState === 'gameover' && (
+        <div className="bg-gray-800 p-8 rounded-xl shadow-2xl text-center border border-gray-700">
+          <h1 className="text-4xl font-bold mb-4 text-white">Game Over!</h1>
+          <p className="text-2xl mb-6">
+            {scores[socket.id] > (Object.entries(scores).find(([id]) => id !== socket.id)?.[1] || 0) 
+              ? <span className="text-green-400 font-bold">Victory! 🏆</span> 
+              : <span className="text-red-400 font-bold">Defeat! ❌</span>}
+          </p>
+          <button 
+            onClick={() => setGameState('menu')}
+            className="bg-blue-600 hover:bg-blue-500 py-2 px-6 rounded-lg font-semibold"
+          >
+            Play Again
+          </button>
+        </div>
+      )}
+      
+    </div>
+  );
+}
